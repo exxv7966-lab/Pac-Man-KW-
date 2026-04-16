@@ -1,0 +1,333 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Pac-Man KW</title>
+    <style>
+        body { background: #000; color: white; display: flex; flex-direction: column; align-items: center; font-family: 'Courier New', Courier, monospace; margin: 0; overflow: hidden; touch-action: none; }
+        .info { margin: 10px; font-weight: bold; font-size: 14px; color: #ffcc00; display: flex; gap: 15px; width: 340px; justify-content: space-between; }
+        #gameCanvas { background: #000; border: 3px solid #1919A6; box-shadow: 0 0 15px #1919A6; }
+        #tBarCont { width: 340px; height: 10px; background: #222; display: none; margin-bottom: 5px; border-radius: 5px; border: 1px solid #444; overflow: hidden; }
+        #tBar { width: 100%; height: 100%; background: #0f0; box-shadow: 0 0 10px #0f0; }
+        .ctrls { display: grid; grid-template-columns: repeat(3, 80px); gap: 10px; margin-top: 15px; }
+        .btn { width: 80px; height: 70px; background: #222; border-radius: 15px; color: white; display: flex; align-items: center; justify-content: center; font-size: 28px; border: 2px solid #444; user-select: none; }
+        #overlay { position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.95); display: flex; flex-direction: column; align-items: center; justify-content: center; z-index: 100; text-align: center; padding: 20px; box-sizing: border-box; }
+        .rules { font-size: 14px; color: #bbb; text-align: left; margin: 15px 0; line-height: 1.6; }
+        .start-btn { padding: 12px 30px; font-size: 16px; background: #ffcc00; color: #000; border: none; border-radius: 8px; font-weight: bold; cursor: pointer; display: block; margin: 10px auto; min-width: 150px; }
+        .win-step { display: none; width: 100%; }
+        #loseMsg { display: none; }
+    </style>
+</head>
+<body>
+
+    <audio id="bgMusic" src="dog and pony show.mp3" loop></audio>
+    <audio id="pestaMusic" src="pesta.mp3" loop></audio>
+    <audio id="winMusic" src="yeay.mp3"></audio>
+    <audio id="sadMusic" src="freak.mp3" loop></audio>
+    <audio id="gameOverMusic" src="game over.mp3"></audio>
+
+    <div id="overlay">
+        <div id="startScreen">
+            <h1 style="color: #ffcc00; margin: 0;">Pac-Man KW</h1>
+            <div class="rules">
+                • Makan poin untuk menang<br>
+                • Kecubung memberi mode PESTA<br>
+                • Mode PESTA membuat ghost takut
+            </div>
+            <button class="start-btn" onclick="startEngine()">MAIN SEKARANG</button>
+        </div>
+
+        <div id="winStep1" class="win-step">
+            <h2 style="color: #0f0;">Selamat Kamu Menang</h2>
+            <button class="start-btn" onclick="nextWinStep(2)">Lanjutkan</button>
+        </div>
+
+        <div id="winStep2" class="win-step">
+            <h2 style="color: #0f0;">Terimakasih Telah Bermain</h2>
+            <p style="color: #ffcc00; font-style: italic; padding: 0 10px;">
+                "Hargailah Pembuat Game Karena Membuat Game Dari Nol Tidak Semudah Yang Terlihat"
+            </p>
+            <button class="start-btn" onclick="nextWinStep(3)">Lanjutkan</button>
+        </div>
+
+        <div id="winStep3" class="win-step">
+            <p style="font-size: 18px; padding: 0 10px;">
+                Hargailah Karya Seseorang Karena Kamu ☝️ Belum Tentu Bisa Membuat Yang Lebih Baik Sendiri 🤫
+            </p>
+            <div style="display: flex; gap: 10px; justify-content: center;">
+                <button class="start-btn" style="background: #555; color: white;" onclick="location.reload()">Kembali</button>
+                <button class="start-btn" onclick="location.reload()">Main Lagi</button>
+            </div>
+        </div>
+
+        <div id="loseMsg">
+            <h2 style="color: #f00;">Alamak kamu kalah bot sekali 😹</h2>
+            <button class="start-btn" onclick="location.reload()">Coba Lagi</button>
+        </div>
+    </div>
+
+    <div class="info">
+        <div>SCORE:<span id="scr">0</span></div>
+        <div>LVL:<span id="lvl">1</span></div>
+        <div>LIVES:<span id="lvs">3</span></div>
+    </div>
+    <div id="tBarCont"><div id="tBar"></div></div>
+    <canvas id="gameCanvas" width="340" height="340"></canvas>
+
+    <div class="ctrls">
+        <div class="btn" onpointerdown="handleInput('UP')" style="grid-column:2">▲</div>
+        <div class="btn" onpointerdown="handleInput('LEFT')" style="grid-column:1">◀</div>
+        <div class="btn" onpointerdown="handleInput('DOWN')" style="grid-column:2">▼</div>
+        <div class="btn" onpointerdown="handleInput('RIGHT')" style="grid-column:3">▶</div>
+    </div>
+
+    <script>
+        const cvs = document.getElementById("gameCanvas");
+        const ctx = cvs.getContext("2d");
+        const myMusic = document.getElementById("bgMusic");
+        const pestaMusic = document.getElementById("pestaMusic");
+        const winSfx = document.getElementById("winMusic");
+        const sadMusic = document.getElementById("sadMusic");
+        const gameOverSfx = document.getElementById("gameOverMusic");
+        const imgKecubung = new Image();
+        imgKecubung.src = 'kecubung.png';
+
+        let score = 0, level = 1, lives = 3, running = false, frame = 0;
+        let pMode = false, pTimer = 0, audioCtx = null;
+        let chili = { x: -1, y: -1, active: false };
+
+        const mazeLayout = [
+            [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,0,0,0,0,0,0,0,1,0,0,0,0,0,0,0,1],
+            [1,0,1,1,0,1,1,0,1,0,1,1,0,1,1,0,1],[1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1],
+            [1,0,1,1,0,1,0,1,1,1,0,1,0,1,1,0,1],[1,1,1,1,0,1,1,1,2,1,1,1,0,1,1,1,1],
+            [2,2,2,2,0,2,2,2,2,2,2,2,0,2,2,2,2],[1,1,1,1,0,1,1,1,1,1,1,1,0,1,1,1,1],
+            [1,0,0,0,0,0,0,0,1,0,0,0,0,0,0,0,1],[1,0,1,1,0,1,1,0,1,0,1,1,0,1,1,0,1],
+            [1,0,0,1,0,0,0,0,2,0,0,0,0,1,0,0,1],[1,1,0,1,0,1,1,1,1,1,1,1,0,1,0,1,1],
+            [1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1]
+        ];
+        let map, pac, ghsts = [];
+
+        function playSound(freq, type, dur, vol = 0.02) {
+            if(!audioCtx) return;
+            let osc = audioCtx.createOscillator();
+            let gain = audioCtx.createGain();
+            osc.type = type; osc.frequency.setValueAtTime(freq, audioCtx.currentTime);
+            gain.gain.setValueAtTime(vol, audioCtx.currentTime);
+            gain.gain.exponentialRampToValueAtTime(0.0001, audioCtx.currentTime + dur);
+            osc.connect(gain); gain.connect(audioCtx.destination);
+            osc.start(); osc.stop(audioCtx.currentTime + dur);
+        }
+
+        function stopAllMusic() {
+            [myMusic, pestaMusic, winSfx, sadMusic, gameOverSfx].forEach(m => {
+                m.pause();
+                m.currentTime = 0;
+            });
+        }
+
+        function updateMusic() {
+            if (lives <= 0) return;
+            
+            if (pMode) {
+                if (myMusic.currentTime !== 0) myMusic.pause();
+                if (pestaMusic.paused) pestaMusic.play().catch(()=>{});
+            } else if (running) {
+                if (pestaMusic.currentTime !== 0) { pestaMusic.pause(); pestaMusic.currentTime = 0; }
+                if (myMusic.paused) myMusic.play().catch(()=>{});
+            }
+        }
+
+        function startEngine() {
+            audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+            document.getElementById('overlay').style.display = 'none';
+            running = true;
+            resetLevel();
+            setInterval(() => { if(running && !chili.active) spawnChili(); }, 5000);
+            requestAnimationFrame(gameLoop);
+            updateMusic();
+        }
+
+        function resetLevel() {
+            map = JSON.parse(JSON.stringify(mazeLayout));
+            pac = { x: 8, y: 11, targetX: 8, targetY: 11, dir: "STAY", nDir: "STAY", speed: 0.15 };
+            ghsts = [];
+            const colors = ["red", "#FFB8FF", "cyan", "orange"];
+            let ghostCount = Math.min(4, level); 
+            for(let i=0; i < ghostCount; i++) {
+                ghsts.push({ 
+                    x: 8, y: 6, targetX: 8, targetY: 6, 
+                    dir: "UP", col: colors[i % colors.length], 
+                    speed: 0.08 + (level * 0.01),
+                    wait: 0 
+                });
+            }
+            document.getElementById('lvl').innerText = level;
+        }
+
+        function handleInput(d) { 
+            pac.nDir = d; 
+            if(audioCtx && audioCtx.state === 'suspended') audioCtx.resume();
+        }
+
+        function isWall(x, y) {
+            let tx = Math.round(x), ty = Math.round(y);
+            if (tx < 0 || tx >= 17) return false;
+            return map[ty] && map[ty][tx] === 1;
+        }
+
+        function update() {
+            if(!running) return;
+            frame++;
+            if(pMode) { 
+                pTimer -= 0.8; // Durasi diperlama kembali
+                let barWidth = (pTimer / 400) * 100;
+                document.getElementById('tBar').style.width = barWidth + "%"; 
+                if(pTimer <= 0) { 
+                    pMode = false; 
+                    document.getElementById('tBarCont').style.display = 'none';
+                    updateMusic();
+                } 
+            }
+
+            if (pac.x === pac.targetX && pac.y === pac.targetY) {
+                let nx = pac.x, ny = pac.y;
+                if(pac.nDir === "UP") ny--; else if(pac.nDir === "DOWN") ny++; else if(pac.nDir === "LEFT") nx--; else if(pac.nDir === "RIGHT") nx++;
+                if (nx < 0) nx = 16; else if (nx >= 17) nx = 0;
+                if (!isWall(nx, ny)) { pac.dir = pac.nDir; pac.targetX = nx; pac.targetY = ny; }
+                else {
+                    nx = pac.x; ny = pac.y;
+                    if(pac.dir === "UP") ny--; else if(pac.dir === "DOWN") ny++; else if(pac.dir === "LEFT") nx--; else if(pac.dir === "RIGHT") nx++;
+                    if (nx < 0) nx = 16; else if (nx >= 17) nx = 0;
+                    if (!isWall(nx, ny)) { pac.targetX = nx; pac.targetY = ny; }
+                }
+            }
+            moveSmoothly(pac);
+
+            let gx = Math.round(pac.x), gy = Math.round(pac.y);
+            if(map[gy] && map[gy][gx] === 0) {
+                map[gy][gx] = 2; score += 10; document.getElementById("scr").innerText = score;
+                playSound(600, 'sine', 0.05);
+                if(map.flat().filter(t => t === 0).length === 0) {
+                    level++;
+                    if(level > 4) {
+                        running = false;
+                        stopAllMusic();
+                        winSfx.play();
+                        document.getElementById('overlay').style.display = 'flex';
+                        document.getElementById('startScreen').style.display = 'none'; 
+                        nextWinStep(1);
+                    } else {
+                        playSound(800, 'square', 0.3); resetLevel();
+                    }
+                }
+            }
+
+            if(chili.active && gx === chili.x && gy === chili.y) { 
+                chili.active = false; pMode = true; pTimer = 400; 
+                document.getElementById('tBarCont').style.display = 'block'; 
+                playSound(300, 'sawtooth', 0.4); 
+                updateMusic();
+            }
+
+            ghsts.forEach(g => {
+                if(g.wait > 0) { g.wait--; return; }
+                if (g.x === g.targetX && g.y === g.targetY) {
+                    let poss = [["UP",0,-1],["DOWN",0,1],["LEFT",-1,0],["RIGHT",1,0]].filter(d => !isWall(g.x + d[1], g.y + d[2]));
+                    if(poss.length > 1) {
+                        poss = poss.filter(p => !((g.dir==="UP"&&p[0]==="DOWN")||(g.dir==="DOWN"&&p[0]==="UP")||(g.dir==="LEFT"&&p[0]==="RIGHT")||(g.dir==="RIGHT"&&p[0]==="LEFT")));
+                    }
+                    let pick = poss[Math.floor(Math.random()*poss.length)];
+                    if(pick) { g.dir = pick[0]; g.targetX += pick[1]; g.targetY += pick[2]; }
+                }
+                moveSmoothly(g);
+                if(Math.abs(g.x - pac.x) < 0.6 && Math.abs(g.y - pac.y) < 0.6) {
+                    if(pMode) { score += 50; g.wait = 180; g.x = 8; g.y = 6; g.targetX = 8; g.targetY = 6; playSound(900, 'sine', 0.1); }
+                    else { 
+                        lives--; playSound(150, 'sawtooth', 0.4); document.getElementById("lvs").innerText = lives; 
+                        if(lives <= 0) { 
+                            running = false; stopAllMusic();
+                            gameOverSfx.play();
+                            document.getElementById('overlay').style.display = 'flex'; 
+                            document.getElementById('startScreen').style.display = 'none'; 
+                            document.getElementById('loseMsg').style.display = 'block'; 
+                        } 
+                        else { pac.x = 8; pac.y = 11; pac.targetX = 8; pac.targetY = 11; pac.dir = "STAY"; pac.nDir = "STAY"; } 
+                    }
+                }
+            });
+        }
+
+        function moveSmoothly(obj) {
+            if (obj.x < obj.targetX) obj.x = Math.min(obj.x + obj.speed, obj.targetX);
+            else if (obj.x > obj.targetX) obj.x = Math.max(obj.x - obj.speed, obj.targetX);
+            if (obj.y < obj.targetY) obj.y = Math.min(obj.y + obj.speed, obj.targetY);
+            else if (obj.y > obj.targetY) obj.y = Math.max(obj.y - obj.speed, obj.targetY);
+            if(obj.x > 16.5) { obj.x = 0; obj.targetX = 0; }
+            else if(obj.x < -0.5) { obj.x = 16; obj.targetX = 16; }
+        }
+
+        function draw() {
+            ctx.clearRect(0,0,340,340);
+            for(let y=0; y<map.length; y++) {
+                for(let x=0; x<map[y].length; x++) {
+                    if(map[y][x] === 1) { ctx.fillStyle = pMode ? "#060" : "#1919A6"; ctx.fillRect(x*20+2, y*20+2, 16, 16); }
+                    else if(map[y][x] === 0) { ctx.fillStyle = "#FFB8AE"; ctx.beginPath(); ctx.arc(x*20+10, y*20+10, 2, 0, 7); ctx.fill(); }
+                }
+            }
+            if(chili.active) ctx.drawImage(imgKecubung, chili.x*20, chili.y*20, 20, 20);
+
+            // Pac-Man
+            ctx.save(); ctx.translate(pac.x*20+10, pac.y*20+10);
+            ctx.rotate((pac.dir==="LEFT")?Math.PI : (pac.dir==="DOWN")?0.5*Math.PI : (pac.dir==="UP")?1.5*Math.PI : 0);
+            let mouth = Math.abs(Math.sin(frame*0.2))*0.25*Math.PI;
+            ctx.fillStyle = pMode ? "#0f0" : "yellow";
+            ctx.beginPath(); ctx.moveTo(0,0); ctx.arc(0,0,9, mouth, 2*Math.PI - mouth); ctx.lineTo(0,0); ctx.fill();
+            ctx.restore();
+
+            // Ghosts
+            ghsts.forEach(g => {
+                let gx = g.x*20+10, gy = g.y*20+10;
+                ctx.fillStyle = pMode ? (frame%20<10?"#fff":"#00f") : g.col;
+                ctx.beginPath(); ctx.arc(gx, gy-2, 9, Math.PI, 0); ctx.lineTo(gx+9, gy+9); 
+                for(let i=0; i<3; i++) ctx.lineTo(gx+9-(i*6), gy+6), ctx.lineTo(gx+9-(i*6+3), gy+9);
+                ctx.lineTo(gx-9, gy+9); ctx.fill();
+                
+                // MATA GHOST (Perbaikan: Selalu Ada)
+                let lx = (g.dir==="LEFT")?-3:(g.dir==="RIGHT")?3:0;
+                let ly = (g.dir==="UP")?-3:(g.dir==="DOWN")?3:0;
+                ctx.fillStyle = "white";
+                ctx.beginPath(); ctx.arc(gx-4+lx, gy-3+ly, 3.5, 0, 7); ctx.arc(gx+4+lx, gy-3+ly, 3.5, 0, 7); ctx.fill();
+                ctx.fillStyle = "black";
+                ctx.beginPath(); ctx.arc(gx-4+lx*1.5, gy-3+ly*1.5, 1.8, 0, 7); ctx.arc(gx+4+lx*1.5, gy-3+ly*1.5, 1.8, 0, 7); ctx.fill();
+            });
+        }
+
+        function gameLoop() { update(); draw(); requestAnimationFrame(gameLoop); }
+        
+        function spawnChili() { 
+            let rx, ry; 
+            let attempts = 0;
+            do { 
+                rx = Math.floor(Math.random()*17); 
+                ry = Math.floor(Math.random()*14); 
+                attempts++;
+            } while((map[ry][rx] !== 0 && map[ry][rx] !== 2) && attempts < 50); 
+            chili = { x: rx, y: ry, active: true }; 
+        }
+
+        function nextWinStep(s) { 
+            document.querySelectorAll('.win-step').forEach(e => e.style.display = 'none'); 
+            document.getElementById('winStep' + s).style.display = 'block';
+            
+            // Putar lagu Freak di tahap 4 & 5
+            if(s === 2) {
+                winSfx.pause();
+                sadMusic.play().catch(()=>{});
+            }
+        }
+
+        window.addEventListener('touchstart', () => { if(audioCtx && audioCtx.state === 'suspended') audioCtx.resume(); }, {once: true});
+    </script>
+</body>
+</html>
